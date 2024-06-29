@@ -1,31 +1,48 @@
 package sergio.aragones.com.repositories
 
+import com.sergio.aragones.kotlinexpert.database.AppDatabase
+import com.squareup.sqldelight.sqlite.driver.JdbcSqliteDriver
 import sergio.aragones.com.models.Note
+import java.io.File
+
+private const val DATABASE_NAME = "database.db"
 
 object NotesRepository {
 
-    private val notes = mutableListOf<Note>()
-    private var currentId = 1L
+    private val database = JdbcSqliteDriver("jdbc:sqlite:$DATABASE_NAME").let {
 
-    fun save(note: Note): Note =
-        note.copy(id = currentId++).also(notes::add)
+        if (!File(DATABASE_NAME).exists()) {
+            AppDatabase.Schema.create(it)
+        }
+        AppDatabase(it)
+    }
+    private val notesQueries = database.noteQueries
 
-    fun getAll(): List<Note> = notes
+    fun save(note: Note): Note {
+        notesQueries.insert(note.title, note.description, note.type.name)
+        return notesQueries.selectLastInsertedNote().executeAsOne().toNote()
+    }
+
+    fun getAll(): List<Note> = notesQueries.select().executeAsList().map { it.toNote() }
 
     fun getById(id: Long): Note? =
-        notes.firstOrNull { it.id == id }
+        notesQueries.selectById(id).executeAsOneOrNull()?.toNote()
 
-    fun update(note: Note): Boolean =
-        notes.indexOfFirst { it.id == note.id }
-            .takeIf { it >= 0 }
-            ?.also { notes[it] = note }
-            .let { it != null }
+    fun update(note: Note): Boolean {
 
-    fun deleteAll() = notes.clear()
+        if (getById(note.id) == null) return false
 
-    fun delete(id: Long): Boolean =
-        notes.indexOfFirst { it.id == id }
-            .takeIf { it >= 0 }
-            ?.also(notes::removeAt)
-            .let { it != null }
+        notesQueries.update(note.title, note.description, note.type.name, note.id)
+        return true
+    }
+
+    fun deleteAll() = notesQueries.delete()
+
+    fun delete(id: Long): Boolean {
+
+        if (getById(id) == null) return false
+
+        notesQueries.deleteById(id)
+        return true
+    }
 }
